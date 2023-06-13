@@ -5,6 +5,8 @@ import os
 import traceback
 from tkinter import messagebox
 from tkinter import filedialog
+from tkinter import Toplevel
+
 
 root = tk.Tk()
 root.title("Minecraft启动器")
@@ -22,16 +24,49 @@ root.geometry(f"{window_width}x{window_height}+{x}+{y}")
 bg_color = "#f5f5f5"
 font = ("微软雅黑", 12)
 
-# 获取版本列表
+#下载模块链接
+
+BMCLAPI = """http://launchermeta.mojang.com/mc/game/version_manifest.json -> https://bmclapi2.bangbang93.com/mc/game/version_manifest.json
+http://launchermeta.mojang.com/mc/game/version_manifest_v2.json -> https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json
+https://launchermeta.mojang.com -> https://bmclapi2.bangbang93.com
+https://launcher.mojang.com -> https://bmclapi2.bangbang93.com
+http://resources.download.minecraft.net -> https://bmclapi2.bangbang93.com/assets
+https://libraries.minecraft.net -> https://bmclapi2.bangbang93.com/maven
+https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json -> https://bmclapi2.bangbang93.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json
+https://files.minecraftforge.net/maven -> https://bmclapi2.bangbang93.com/maven
+http://dl.liteloader.com/versions/versions.json -> https://bmclapi.bangbang93.com/maven/com/mumfrey/liteloader/versions.json
+https://authlib-injector.yushi.moe -> https://bmclapi2.bangbang93.com/mirrors/authlib-injector
+https://meta.fabricmc.net -> https://bmclapi2.bangbang93.com/fabric-meta
+https://meta.fabricmc.net -> https://bmclapi2.bangbang93.com/fabric-meta"""
+MCBBS = BMCLAPI + "\nhttps://bmclapi2.bangbang93.com -> https://download.mcbbs.net"
+
+#镜像源地址快速修改，用诸如"a -> b\n c -> d"的格式定义要替换的地址，然后用inject函数替换url，返回值为替换镜像源后的url
+
+class MirrorInjector(object):
+    def __init__(self, mirrorProperties):
+        mirrorPropertiesObj = {}
+        for i in str(mirrorProperties).replace(' ', '').split():
+            j = i.split("->", 1)
+            mirrorPropertiesObj[j[0]] = j[1]
+        self.__mirrorPropertiesObj = mirrorPropertiesObj
+        
+    def inject(self, url):
+        urlb = str(url)
+        for key,value in self.__mirrorPropertiesObj.items():
+            urlb = urlb.replace(key, value)
+        return urlb
+
 def get_versions():
     try:
-        response = requests.get("https://bmclapi2.bangbang93.com/mc/game/version_manifest.json")
+        injector = MirrorInjector(BMCLAPI)
+        response = requests.get(injector.inject("http://launchermeta.mojang.com/mc/game/version_manifest.json"))
         response.raise_for_status()
         versions_json = response.json()["versions"]
     except requests.exceptions.RequestException as e:
         traceback.print_exc()
         versions_json = []
     return versions_json
+
 
 # 创建输入框和标签
 path_label = tk.Label(root, text="Minecraft路径：", bg=bg_color, font=font)
@@ -62,7 +97,6 @@ if versions_json:
     versions_menu.config(bg=bg_color, font=font, width=10)
     versions_menu.place(x=50, y=150)
 
-# 创建启动按钮
 def start_minecraft():
     path = path_entry.get().strip()
     args = args_entry.get().strip()
@@ -79,10 +113,18 @@ def start_minecraft():
     version_path = f"versions/{selected_version}/{selected_version}.jar"
 
     if not os.path.exists(version_path):
+        # 如果版本没有下载，则弹出下载窗口并等待下载完成
+        download_window = Toplevel(root)
+        download_window.title("下载中...")
+        download_window.geometry("300x100")
         download_window.deiconify()
+
+        download_thread = threading.Thread(target=download_version, args=(download_url, version_path, download_window))
+        download_thread.start()
+
         return
 
-    # 启动Minecraft，显示等待动画
+    # 如果版本已经下载，则直接启动游戏
     wait_window = tk.Toplevel(root)
     wait_window.title("启动中")
     wait_window.geometry("200x100")
@@ -97,6 +139,7 @@ def start_minecraft():
 start_button = tk.Button(root, text="启动", bg="#4CAF50", fg="white", font=font, command=start_minecraft)
 start_button.place(x=50, y=200)
 
+
 # 创建下载中心界面
 download_window = tk.Toplevel(root)
 download_window.title("下载中心")
@@ -110,33 +153,40 @@ if versions_json:
     versions_listbox.pack(side=tk.LEFT, fill=tk.BOTH)
 
     # 创建下载按钮
-    def download_version():
-        selected_version = versions_listbox.get(tk.ACTIVE)
-        version_url = next(version["url"] for version in versions_json if version["id"] == selected_version)
-        download_url = f"https://bmclapi2.bangbang93.com{version_url}"
-        download_path = f"versions/{selected_version}/{selected_version}.jar"
+def download_version():
+    selected_version = versions_listbox.get(tk.ACTIVE)
+    version_url = next(version["url"] for version in versions_json if version["id"] == selected_version)
+    download_url = f"https://bmclapi2.bangbang93.com{version_url}"
+    download_path = f"versions/{selected_version}/{selected_version}.jar"
 
-        if not os.path.exists(os.path.dirname(download_path)):
-            os.makedirs(os.path.dirname(download_path))
+    if not os.path.exists(os.path.dirname(download_path)):
+        os.makedirs(os.path.dirname(download_path))
 
-        try:
-            response = requests.get(download_url)
-            response.raise_for_status()
-            with open(download_path, "wb") as f:
-                f.write(response.content)
-            messagebox.showinfo("提示", "下载成功")
-        except requests.exceptions.RequestException:
-            messagebox.showerror("错误", "下载失败")
-
-    download_button = tk.Button(download_window, text="下载", bg="#4CAF50", fg="white", font=font, command=download_version)
-    download_button.pack(side=tk.RIGHT)
+    # 设置下载按钮为不可用状态
     download_button.config(state=tk.DISABLED)
 
-    # 下载完成后启用下载按钮
-    def enable_download_button(event):
-        download_button.config(state=tk.NORMAL)
+    try:
+        response = requests.get(download_url)
+        response.raise_for_status()
+        with open(download_path, "wb") as f:
+            f.write(response.content)
+        messagebox.showinfo("提示", "下载成功")
+    except requests.exceptions.RequestException as e:
+        messagebox.showerror("错误", f"下载失败：{e}")
 
-    download_window.bind("<Map>", enable_download_button)
+    # 重新启用下载按钮
+    download_button.config(state=tk.NORMAL)
+
+# 创建下载按钮
+download_button = tk.Button(download_window, text="下载", bg="#4CAF50", fg="white", font=font, command=download_version)
+download_button.pack(side=tk.RIGHT)
+download_button.config(state=tk.DISABLED)
+
+# 下载完成后启用下载按钮
+def enable_download_button(event):
+    download_button.config(state=tk.NORMAL)
+
+download_window.bind("<Map>", enable_download_button)
 
 # 创建启动器界面的下载中心按钮
 if versions_json:
