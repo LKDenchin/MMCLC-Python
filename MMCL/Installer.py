@@ -31,6 +31,3 @@ class MirrorInjector(object):
 #if __name__ == '__main__':
 #    injector = MirrorInjector("a -> b\nc -> d")
 #    print(injector.inject("apkpopkpkpkc"))
-
-if __name__ == '__main__':
-    print(BMCLAPI)
