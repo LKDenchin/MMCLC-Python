@@ -33,8 +33,7 @@ class AccountFactory(ABC):
 
 class OfflineAccount(Account):
     def __init__(self, username, uuid = None):
-        
-        super().__init__(self, "0", [{'id': (uuid.UUID("OfflinePlayer:" + username) if uuid == None else uuid), 'name': username}])
+        super().__init__(self, "0", {'id': (uuid.UUID("OfflinePlayer:" + username) if uuid == None else uuid), 'name': username})
     
     def getSelectedProfile(self) -> Profile:
         profile = self.profiles[0]
@@ -98,4 +97,32 @@ class YggdrasilAccountFactory(AccountFactory):
         responseJson = json.load(response.text)
         responseJson['authserver'] = self.authserver
         return YggdrasilAccount(responseJson)
-        
+
+class MicrosoftAccount(MicrosoftAccount):
+    def __init__(self, response):
+        super().__init__(self, response['access_token'], response)
+
+    def getSelectedProfile(self) -> Profile:
+        return Profile(self.profiles['access_token'], self.profiles['id'], self.profiles['name'], "msa")
+
+class MicrosoftAccountFactory(AccountFactory):
+    def __init__(self):
+        pass
+    
+    def fromStorage(self, minecraftDir) -> Account:
+        pass
+    
+    def create(self, userhash, xstsToken) -> Account:
+        url = "https://api.minecraftservices.com/authentication/login_with_xbox"
+        urlProfile = "https://api.minecraftservices.com/minecraft/profile"
+        requestJson = json.dumps({'identityToken': 'XBL3.0 x=<' + userhash + '>;<' + xstsToken + '>'})
+        response = requests.post(url, json = requestJson, headers = {'Content-Type': 'application/json'})
+        responseJson = json.load(response.text)
+        accessToken = responseJson['access_token']
+        tokenType = responseJson['token_type']
+        profile = requests.get(urlProfile, headers = {'Authorization': tokenType + ' ' + accessToken})
+        profileJson = json.load(profile)
+        if "error" in profileJson.keys():
+            raise AuthError(response.text)
+        profileJson['access_token'] = accessToken
+        return MicrosoftAccount(profileJson)
